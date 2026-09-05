@@ -1,21 +1,30 @@
 package com.brainvault.ui
 
 import com.brainvault.domain.model.Link
+import javafx.application.Platform
 import javafx.scene.control.Label
 import javafx.scene.control.ListCell
 import javafx.scene.control.ListView
 import javafx.scene.layout.HBox
 import javafx.scene.layout.Priority
 import javafx.scene.layout.VBox
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Lists resolved backlinks (inbound links) for the current note. Clicking a
  * backlink navigates to it. Shows an explicit "no backlinks" placeholder.
  *
- * A `backlinksFor: (notePath: String) -> List<Link>` provider is injected by the
- * composition root so this panel never needs a repository/port import.
+ * The `backlinksFor: (notePath) -> List<Link>` provider is injected by the
+ * composition root; it is invoked off the FX thread and the result applied on
+ * the FX thread.
  */
-class BacklinksPanel(private val backlinksFor: (String) -> List<Link>) {
+class BacklinksPanel(
+    private val backlinksFor: (String) -> List<Link>,
+    private val scope: CoroutineScope,
+) {
 
     val view: VBox = VBox(6.0)
     var onBacklinkSelected: (relPath: String) -> Unit = {}
@@ -32,8 +41,15 @@ class BacklinksPanel(private val backlinksFor: (String) -> List<Link>) {
         VBox.setVgrow(list, Priority.ALWAYS)
     }
 
+    /** Loads backlinks off the FX thread and applies the result on the FX thread. */
     fun showFor(notePath: String) {
-        val links = backlinksFor(notePath)
+        scope.launch {
+            val links = withContext(Dispatchers.IO) { backlinksFor(notePath) }
+            Platform.runLater { apply(links) }
+        }
+    }
+
+    private fun apply(links: List<Link>) {
         if (links.isEmpty()) {
             list.items.clear()
             list.placeholder = Label("No backlinks")

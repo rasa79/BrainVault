@@ -59,6 +59,24 @@ The spec's constructor was `(NoteService, SettingsService)`, but the template-su
 full file (front matter **and** body) so arbitrary configured templates are honored exactly. A
 `VaultFileStore` was added to write the substituted byte-for-byte template content.
 
+**2026-09-05 — Fixed a JavaFX `IndexOutOfBoundsException` from rebuilding the vault `TreeView` during selection.**
+**Root cause:** `VaultTreeView` was rebuilt synchronously inside the tree's selection-changed
+handler (`MainView.onNoteSelected` called `refreshFromVault()` while `TreeViewBehavior` was mid
+`clearAndSelect`/`mousePressed`), which replaced the tree's item list out from under the selection
+model (`ReadOnlyUnbackedObservableList.subList`). The tags-filter path repeated the same pattern.
+Separately, several panels ran blocking DB/file code on the FX thread.
+
+**Fixes applied:**
+- Selecting a note no longer refreshes the tree (it just opens the note).
+- The tree model is built off the FX thread and applied on the FX thread via a deferred
+  `Platform.runLater`; `refresh(tree)` is selection-safe (clears the old selection before replacing
+  the root, then restores the previously selected note if it still exists).
+- All UI mutations (tree refresh, tag/favorite/backlink/search panels, editor load, preview update,
+  status bar) now run on the FX thread (`Platform.runLater` / FX listeners), with data loaded off the
+  FX thread (`scope + withContext(Dispatchers.IO)`). QuickOpenDialog's note list is likewise loaded off
+  the FX thread.
+- Vault file events (watcher) now trigger a deferred UI refresh via `MainView.onVaultChanged()`.
+
 **2026-09-05 — `application.SettingsService` uses a custom delegated `ReadWriteProperty`.**
 `vaultPath`/`dailyFolder`/`dailyPattern`/`dailyTemplate` use `by` delegation (a hand-written delegate) so
 each get reads through to the store and each set writes through immediately. This both satisfies the

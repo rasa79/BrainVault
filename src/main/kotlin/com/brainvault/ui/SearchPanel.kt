@@ -3,6 +3,7 @@ package com.brainvault.ui
 import com.brainvault.application.SearchService
 import com.brainvault.domain.model.SearchHit
 import javafx.animation.PauseTransition
+import javafx.application.Platform
 import javafx.scene.control.Label
 import javafx.scene.control.ListCell
 import javafx.scene.control.ListView
@@ -12,13 +13,21 @@ import javafx.scene.layout.VBox
 import javafx.scene.text.Text
 import javafx.scene.text.TextFlow
 import javafx.util.Duration
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Search-as-you-type panel: a query box with a 300 ms debounce and a results
  * list showing the title, vault-relative path, and a snippet whose `<b>`
- * highlight markers from FTS5 are rendered as bold text.
+ * highlight markers from FTS5 are rendered as bold text. Queries run off the FX
+ * thread; stale results are discarded.
  */
-class SearchPanel(private val searchService: SearchService) {
+class SearchPanel(
+    private val searchService: SearchService,
+    private val scope: CoroutineScope,
+) {
 
     val view: VBox = VBox(6.0)
     var onHitSelected: (relPath: String) -> Unit = {}
@@ -26,6 +35,7 @@ class SearchPanel(private val searchService: SearchService) {
     private val query: TextField = TextField()
     private val results: ListView<SearchHit> = ListView()
     private val debounce = PauseTransition(Duration.millis(300.0))
+    private var generation = 0
 
     init {
         query.promptText = "Search notes…"
@@ -56,7 +66,13 @@ class SearchPanel(private val searchService: SearchService) {
             results.items.clear()
             return
         }
-        results.items.setAll(searchService.search(q))
+        val gen = ++generation
+        scope.launch {
+            val hits = withContext(Dispatchers.IO) { searchService.search(q) }
+            Platform.runLater {
+                if (gen == generation) results.items.setAll(hits)
+            }
+        }
     }
 
     private class SearchHitCell : ListCell<SearchHit>() {

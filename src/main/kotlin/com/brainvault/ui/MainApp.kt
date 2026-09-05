@@ -143,9 +143,13 @@ class MainApp : Application() {
             }
         }
 
-        // 7. Watch the vault for file events (§5.4 step 7).
+        // 7. Watch the vault for file events (§5.4 step 7). Reindex on the DB scope,
+        //    then refresh the UI panels on the FX thread via MainView.
         vaultWatcher.start(vaultRoot) { events ->
-            dbScope.launch { indexingService.onFileEvents(vaultRoot, events) }
+            dbScope.launch {
+                indexingService.onFileEvents(vaultRoot, events)
+                mainView.onVaultChanged()
+            }
         }
 
         stage.show()

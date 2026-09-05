@@ -80,15 +80,15 @@ class MainView(
     val root: BorderPane = BorderPane()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val vaultTree = VaultTreeView(vaultService, noteService, vaultRoot)
+    private val vaultTree = VaultTreeView(vaultService, noteService, vaultRoot, scope)
     private val editor = EditorView()
     private val preview = PreviewView(noteService)
     private val statusBar = StatusBar()
-    private val searchPanel = SearchPanel(searchService)
-    private val favoritesPanel = FavoritesPanel(favoriteService)
-    private val tagsPanel = TagsPanel(tagService)
-    private val backlinksPanel = BacklinksPanel(backlinksFor)
-    private val quickOpen = QuickOpenDialog(noteRepository)
+    private val searchPanel = SearchPanel(searchService, scope)
+    private val favoritesPanel = FavoritesPanel(favoriteService, scope)
+    private val tagsPanel = TagsPanel(tagService, scope)
+    private val backlinksPanel = BacklinksPanel(backlinksFor, scope)
+    private val quickOpen = QuickOpenDialog(noteRepository, scope)
     private val settingsDialog = SettingsDialog(settingsService)
 
     private var openNote: Note? = null
@@ -164,11 +164,10 @@ class MainView(
     }
 
     private fun wireEvents() {
-        vaultTree.onNoteSelected = { relPath ->
-            vaultTree.refreshFromVault()
-            openNote(relPath)
-        }
-        vaultTree.onRequestRefresh = { vaultTree.refreshFromVault() }
+        // Do NOT refresh the tree from the selection handler — rebuilding the
+        // tree root during a clearAndSelect/mousePressed corrupts the TreeView
+        // item list (IndexOutOfBoundsException). Selecting a note just opens it.
+        vaultTree.onNoteSelected = { relPath -> openNote(relPath) }
         editor.onTextChanged = { text -> preview.update(text) }
         editor.onSaveRequested = { save() }
         editor.view.textProperty().addListener { _, _, _ -> statusBar.showDirty(editor.dirty) }
@@ -200,10 +199,19 @@ class MainView(
 
     fun showInitialState() {
         statusBar.setVaultPath(vaultRoot.toString())
-        vaultTree.refreshFromVault()
+        refreshTree()
         favoritesPanel.refresh()
         tagsPanel.refresh()
         statusBar.showIdle(0)
+    }
+
+    private fun refreshTree() = vaultTree.refreshAsync()
+
+    /** Refresh the tree + derived panels after a vault change (file events). */
+    fun onVaultChanged() {
+        refreshTree()
+        tagsPanel.refresh()
+        favoritesPanel.refresh()
     }
 
     fun showIndexing(done: Int, total: Int) = statusBar.showIndexing(done, total)
@@ -257,7 +265,7 @@ class MainView(
                 editor.load(note.body)
                 preview.update(note.body)
                 statusBar.showDirty(false)
-                vaultTree.refreshFromVault()
+                refreshTree()
             }
         }
     }
@@ -288,7 +296,7 @@ class MainView(
         scope.launch {
             val newPath = withContext(Dispatchers.IO) { noteService.rename(vaultRoot, current.path, name) }
             Platform.runLater {
-                vaultTree.refreshFromVault()
+                refreshTree()
                 openNote(newPath)
             }
         }
@@ -305,7 +313,7 @@ class MainView(
         scope.launch {
             val newPath = withContext(Dispatchers.IO) { noteService.move(vaultRoot, current.path, folder) }
             Platform.runLater {
-                vaultTree.refreshFromVault()
+                refreshTree()
                 openNote(newPath)
             }
         }
@@ -325,7 +333,7 @@ class MainView(
                 openNote = null
                 editor.load("")
                 preview.update("")
-                vaultTree.refreshFromVault()
+                refreshTree()
                 tagsPanel.refresh()
             }
         }
@@ -341,16 +349,22 @@ class MainView(
 
     private fun filterByTag(tagName: String) {
         if (tagName.isEmpty()) {
-            vaultTree.refreshFromVault()
+            refreshTree()
             return
         }
-        val notes = tagService.notesFor(tagName)
-        val paths = notes.map { it.path }
-        if (paths.isEmpty()) {
-            vaultTree.refreshFromVault()
-            return
+        // Load off the FX thread and apply on FX deferred — never rebuild the
+        // tree from within a selection-change event.
+        scope.launch {
+            val tree = withContext(Dispatchers.IO) {
+                val paths = tagService.notesFor(tagName).map { it.path }
+                if (paths.isEmpty()) {
+                    vaultService.tree(vaultRoot)
+                } else {
+                    FolderNode(name = "Tag: $tagName", path = "", folders = emptyList(), notePaths = paths)
+                }
+            }
+            Platform.runLater { vaultTree.refresh(tree) }
         }
-        vaultTree.refresh(FolderNode(name = "Tag: $tagName", path = "", folders = emptyList(), notePaths = paths))
     }
 
     private fun openDailyNote() {
@@ -361,7 +375,7 @@ class MainView(
                 editor.load(note.body)
                 preview.update(note.body)
                 statusBar.showDirty(false)
-                vaultTree.refreshFromVault()
+                refreshTree()
             }
         }
     }
@@ -378,7 +392,7 @@ class MainView(
             }
             Platform.runLater {
                 statusBar.showIdle(count)
-                vaultTree.refreshFromVault()
+                refreshTree()
                 Alert(Alert.AlertType.INFORMATION).apply {
                     title = "Import"
                     headerText = "Imported $count note(s)"
@@ -442,7 +456,7 @@ class MainView(
                 editor.load(body)
                 preview.update(body)
                 statusBar.showDirty(false)
-                vaultTree.refreshFromVault()
+                refreshTree()
             }
         }
     }
@@ -456,7 +470,7 @@ class MainView(
             }
             Platform.runLater {
                 statusBar.showIdle(0)
-                vaultTree.refreshFromVault()
+                refreshTree()
                 favoritesPanel.refresh()
                 tagsPanel.refresh()
             }
