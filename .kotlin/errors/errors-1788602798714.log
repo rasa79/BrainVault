@@ -1,0 +1,3 @@
+kotlin version: 2.4.10
+error message: java.nio.file.FileSystemException: /home/bucko/.local/share/kotlin/daemon/kotlin-daemon-client-tsmarker7108161565025519873.tmp: Read-only file system
+

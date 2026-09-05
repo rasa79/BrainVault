@@ -1,0 +1,25 @@
+[versions]
+kotlin = "2.4.10"
+javafx = "25.0.4"
+javafxplugin = "0.1.0"
+sqlite = "3.53.4.0"
+flexmark = "0.64.8"
+snakeyaml = "2.7"
+coroutines = "1.11.0"
+junit = "5.14.4"
+
+[libraries]
+javafx-base = { group = "org.openjfx", name = "javafx-base", version.ref = "javafx" }
+javafx-graphics = { group = "org.openjfx", name = "javafx-graphics", version.ref = "javafx" }
+javafx-controls = { group = "org.openjfx", name = "javafx-controls", version.ref = "javafx" }
+javafx-web = { group = "org.openjfx", name = "javafx-web", version.ref = "javafx" }
+sqlite-jdbc = { group = "org.xerial", name = "sqlite-jdbc", version.ref = "sqlite" }
+flexmark-all = { group = "com.vladsch.flexmark", name = "flexmark-all", version.ref = "flexmark" }
+snakeyaml = { group = "org.yaml", name = "snakeyaml", version.ref = "snakeyaml" }
+coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
+coroutines-javafx = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-javafx", version.ref = "coroutines" }
+junit-jupiter = { group = "org.junit.jupiter", name = "junit-jupiter", version.ref = "junit" }
+
+[plugins]
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+javafx = { id = "org.openjfx.javafxplugin", version.ref = "javafxplugin" }
