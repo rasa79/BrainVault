@@ -29,7 +29,7 @@ javac --version
 | Task | WSL (dev/test) | Windows (production) |
 | --- | --- | --- |
 | Create project root | `mkdir -p ~/dev2/BrainVault` | n/a (repo is shared) |
-| Repo location | `~/dev2/BrainVault` | `\\wsl$\Ubuntu\home\<user>\dev2\BrainVault` — **PowerShell only**, never cmd.exe |
+| Repo location | `~/dev2/BrainVault` | `\\wsl$\Ubuntu\home\<user>\dev2\BrainVault` — **PowerShell only**, never cmd.exe. If you must use cmd.exe, map a drive first: `net use B: \\wsl$\Ubuntu\home\<user>\dev2\BrainVault` then run Gradle from `B:\`; or run `cmd /c pushd \\wsl$\Ubuntu\home\<user>\dev2\BrainVault && gradlew.bat test` (cmd.exe cannot hold a UNC path as its working directory). |
 | Bootstrap wrapper (once) | `gradle wrapper --gradle-version 9.6.1` | n/a — wrapper committed |
 | Build + test | `./gradlew test` | `gradlew.bat test` |
 | Run app | `./gradlew run` | `gradlew.bat run` |

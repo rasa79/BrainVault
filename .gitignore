@@ -8,3 +8,4 @@ out/
 .bootstrap-gradle/
 .gradle-home/
 .bootstrap-tmp/
+.kotlin/

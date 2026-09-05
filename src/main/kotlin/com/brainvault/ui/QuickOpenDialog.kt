@@ -1,7 +1,6 @@
 package com.brainvault.ui
 
 import com.brainvault.domain.port.NoteRepository
-import javafx.application.Platform
 import javafx.scene.control.Dialog
 import javafx.scene.control.Label
 import javafx.scene.control.ListCell
@@ -13,6 +12,7 @@ import javafx.scene.layout.VBox
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.javafx.JavaFx
 import kotlinx.coroutines.withContext
 
 /**
@@ -103,7 +103,7 @@ class QuickOpenDialog(
                 noteRepository.allPaths().map { p -> p to (noteRepository.findByPath(p)?.title ?: p) }
             }
             entries = loaded
-            Platform.runLater { filter() }
+            withContext(Dispatchers.JavaFx) { filter() }
         }
         filter() // initial (empty) layout; repopulated when `loaded` arrives.
 

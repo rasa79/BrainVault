@@ -1,7 +1,6 @@
 package com.brainvault.ui
 
 import com.brainvault.domain.model.Link
-import javafx.application.Platform
 import javafx.scene.control.Label
 import javafx.scene.control.ListCell
 import javafx.scene.control.ListView
@@ -11,6 +10,7 @@ import javafx.scene.layout.VBox
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.javafx.JavaFx
 import kotlinx.coroutines.withContext
 
 /**
@@ -45,7 +45,7 @@ class BacklinksPanel(
     fun showFor(notePath: String) {
         scope.launch {
             val links = withContext(Dispatchers.IO) { backlinksFor(notePath) }
-            Platform.runLater { apply(links) }
+            withContext(Dispatchers.JavaFx) { apply(links) }
         }
     }
 

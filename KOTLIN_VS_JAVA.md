@@ -10,7 +10,7 @@ corresponds to exactly one id in code. See §5.6 of `BrainVault_v1_Plan.md`.
 | KJV-003 | Null safety (`?`, `?.`, `?:`, `!!`) vs `Optional` | `domain/model/NoteMeta.kt` → nullable `created`/`modified` | `?` marks nullability in the type system; Java uses `Optional`, which is not type-orthogonal. |
 | KJV-004 | Default & named arguments vs overloads | `domain/model/NoteMeta.kt` → constructor defaults | Defaults in the declaration; Java needs one overload (or builder) per combination. |
 | KJV-005 | `if`-expression vs Java ternary | `domain/model/NoteMeta.kt` → `mergeInto` | Control structures are expressions; Java needs a ternary or per-branch assignment. |
-| KJV-006 | `enum class` vs Java enum | `domain/model/Link.kt` → `LinkKind` | Kotlin enums can carry behavior and be switched exhaustively without a default. |
+| KJV-006 | `enum class` vs Java enum | `domain/model/Link.kt` → `LinkKind` | Kotlin `when` over an enum as an expression is compile-time exhaustive; Java switch *expressions* over enums/sealed types are also checked since 14/21 (switch statements never needed a default). |
 | KJV-007 | Recursive data model + immutable `List` | `domain/model/FolderNode.kt` → `data class FolderNode` | One data type with empty-string sentinels; Kotlin lists are read-only by default. |
 | KJV-008 | Interfaces as ports (dependency inversion) | `domain/port/NoteRepository.kt` → `interface NoteRepository` | Domain defines the contract; infrastructure supplies the implementation. |
 | KJV-009 | Data class + enum + `java.nio.file.Path` in domain | `domain/port/FileEventSource.kt` → `FileEvent` | Domain may use `Path` only as a signature type per the layering rule. |
@@ -26,4 +26,4 @@ corresponds to exactly one id in code. See §5.6 of `BrainVault_v1_Plan.md`.
 | KJV-019 | Coroutines vs virtual threads / `CompletableFuture` | `ui/MainApp.kt` → `dbScope` | Structured coroutines suspend without blocking; `Dispatchers.JavaFx` returns to the UI thread. |
 | KJV-020 | Scope functions (`let`/`apply`/`run`/`also`/`with`) | `ui/MainView.kt` → `TextInputDialog(...).apply { }` | `apply`/`also` return the receiver to configure; `let`/`run` return the block result. |
 | KJV-021 | Extension functions vs static helpers | `infrastructure/fs/VaultFileStore.kt` → `private fun Path.isUnderDir(dir)` | Kotlin adds methods to existing types with member syntax; Java needs static utils. |
-| KJV-022 | Sealed classes/interfaces & exhaustive `when` | `application/IndexingService.kt` → `when (link.kind)` | `when` over a closed set (enum/sealed) is checked exhaustive; Java switch needs a default. |
+| KJV-022 | Sealed classes/interfaces & exhaustive `when` | `application/IndexingService.kt` → `when (link.kind)` | Kotlin enforces exhaustion for `when` used as an *expression*; Java switch expressions over sealed/enum are likewise checked (14/21), and a switch statement never required a default. |

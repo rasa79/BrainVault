@@ -29,6 +29,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.javafx.JavaFx
+import kotlinx.coroutines.withContext
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -139,7 +141,7 @@ class MainApp : Application() {
                 indexingService.fullRebuild(vaultRoot) { done, total ->
                     Platform.runLater { mainView.showIndexing(done, total) }
                 }
-                Platform.runLater { mainView.showIdle(noteRepo.count()) }
+                withContext(Dispatchers.JavaFx) { mainView.showIdle(noteRepo.count()) }
             }
         }
 

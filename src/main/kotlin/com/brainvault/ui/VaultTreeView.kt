@@ -3,13 +3,13 @@ package com.brainvault.ui
 import com.brainvault.application.NoteService
 import com.brainvault.application.VaultService
 import com.brainvault.domain.model.FolderNode
-import javafx.application.Platform
 import javafx.scene.control.TreeCell
 import javafx.scene.control.TreeItem
 import javafx.scene.control.TreeView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.javafx.JavaFx
 import kotlinx.coroutines.withContext
 import java.nio.file.Path
 
@@ -64,7 +64,7 @@ class VaultTreeView(
     fun refreshAsync() {
         scope.launch {
             val tree = withContext(Dispatchers.IO) { vaultService.tree(vaultRoot) }
-            Platform.runLater { refresh(tree) }
+            withContext(Dispatchers.JavaFx) { refresh(tree) }
         }
     }
 

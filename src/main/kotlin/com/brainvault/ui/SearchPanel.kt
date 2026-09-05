@@ -3,7 +3,6 @@ package com.brainvault.ui
 import com.brainvault.application.SearchService
 import com.brainvault.domain.model.SearchHit
 import javafx.animation.PauseTransition
-import javafx.application.Platform
 import javafx.scene.control.Label
 import javafx.scene.control.ListCell
 import javafx.scene.control.ListView
@@ -16,6 +15,7 @@ import javafx.util.Duration
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.javafx.JavaFx
 import kotlinx.coroutines.withContext
 
 /**
@@ -69,7 +69,7 @@ class SearchPanel(
         val gen = ++generation
         scope.launch {
             val hits = withContext(Dispatchers.IO) { searchService.search(q) }
-            Platform.runLater {
+            withContext(Dispatchers.JavaFx) {
                 if (gen == generation) results.items.setAll(hits)
             }
         }

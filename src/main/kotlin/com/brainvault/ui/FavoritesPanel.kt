@@ -2,7 +2,6 @@ package com.brainvault.ui
 
 import com.brainvault.application.FavoriteService
 import com.brainvault.domain.model.Note
-import javafx.application.Platform
 import javafx.scene.control.Button
 import javafx.scene.control.Label
 import javafx.scene.control.ListCell
@@ -13,6 +12,7 @@ import javafx.scene.layout.VBox
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.javafx.JavaFx
 import kotlinx.coroutines.withContext
 
 /**
@@ -42,7 +42,7 @@ class FavoritesPanel(
     fun refresh() {
         scope.launch {
             val notes = withContext(Dispatchers.IO) { favoriteService.list() }
-            Platform.runLater { list.items.setAll(notes) }
+            withContext(Dispatchers.JavaFx) { list.items.setAll(notes) }
         }
     }
 
@@ -65,8 +65,8 @@ class FavoritesPanel(
                             favorites.toggle(note.path)
                             favorites.list()
                         }
-                        Platform.runLater {
-                            (listView ?: return@runLater).items.setAll(updated)
+                        withContext(Dispatchers.JavaFx) {
+                            (listView ?: return@withContext).items.setAll(updated)
                         }
                     }
                 }

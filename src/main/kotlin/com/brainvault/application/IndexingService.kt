@@ -104,12 +104,28 @@ class IndexingService(
             //   is exhaustive and needs no default. If a new enum constant were
             //   added, this would fail to compile — a safety Java's switch lacks.
             // Java 25 equivalent:
-            //   switch (link.kind) { ... } still requires an explicit default (or
-            //   a throw) even when all cases are listed, because enum constants
-            //   are not guaranteed closed outside the switch's own source file.
+            //   switch (link.kind) {   // switch EXPRESSION over an enum
+            //       case WIKI -> ...;
+            //       case MARKDOWN -> ...;
+            //   }                       // no `default` needed
+            //   Java switch *expressions* over an enum or a sealed type are
+            //   exhaustiveness-checked by the compiler (since switch expressions in
+            //   14 and finalized pattern matching in 21) and require no `default`.
+            //   A Java switch *statement* never required a default. When a brand-new
+            //   enum constant appears after compilation, the compiler-inserted
+            //   guard throws IncompatibleClassChangeError at runtime — again with
+            //   no source-level default.
             // Differences:
-            //   - Kotlin `when` over a sealed hierarchy is checked exhaustively;
-            //     Java switch is not checked (needs a `default` branch).
+            //   - Kotlin: a `when` used as an EXPRESSION must be exhaustive (a
+            //     missing case for an enum/sealed type is a compile error); a `when`
+            //     used as a statement need not be. Both are checked at compile time.
+            //   - Java: exhaustiveness is enforced only for *switch expressions*
+            //     over sealed types/enums (14/21+); a switch statement never needed
+            //     a default. Kotlin backs an exhausted `when` with a runtime
+            //     NoWhenBranchMatchedException guard; Java uses
+            //     IncompatibleClassChangeError. The languages differ in *when* the
+            //     check is enforced (expression vs statement), not in whether a
+            //     default is mandatory.
             // ============================================================
             when (link.kind) {
                 LinkKind.WIKI -> {

@@ -22,10 +22,12 @@ import javafx.scene.control.MenuBar
 import javafx.scene.control.MenuItem
 import javafx.scene.control.SeparatorMenuItem
 import javafx.scene.control.SplitPane
+import javafx.scene.control.TextInputControl
 import javafx.scene.control.TextInputDialog
 import javafx.scene.control.TitledPane
 import javafx.scene.input.KeyCode
 import javafx.scene.input.KeyCombination
+import javafx.scene.input.KeyEvent
 import javafx.scene.layout.BorderPane
 import javafx.scene.layout.Priority
 import javafx.scene.layout.VBox
@@ -35,6 +37,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.javafx.JavaFx
 import kotlinx.coroutines.withContext
 import java.nio.file.Path
 import java.time.LocalDate
@@ -93,6 +96,7 @@ class MainView(
 
     private var openNote: Note? = null
     private var currentFolder: String = ""
+    private var tagFilterActive = false
 
     init {
         buildLayout()
@@ -180,21 +184,44 @@ class MainView(
     /** Binds scene accelerators (called by MainApp once the scene is attached). */
     fun bindSceneShortcuts() {
         val scene = root.scene ?: return
-        scene.accelerators[KeyCombination.keyCombination("Shortcut+S")] = Runnable { save() }
-        scene.accelerators[KeyCombination.keyCombination("Shortcut+N")] = Runnable { newNote() }
-        scene.accelerators[KeyCombination.keyCombination("Shortcut+P")] = Runnable { quickOpen.show() }
-        scene.accelerators[KeyCombination.keyCombination("Shortcut+Shift+F")] = Runnable { searchPanel.focusQuery() }
-        scene.accelerators[KeyCombination.keyCombination("Shortcut+B")] = Runnable { toggleFavorite() }
-        scene.accelerators[KeyCombination.keyCombination("Shortcut+Shift+D")] = Runnable { openDailyNote() }
-        scene.accelerators[KeyCombination.keyCombination("Shortcut+Shift+R")] = Runnable { rebuildIndex() }
-        scene.accelerators[KeyCombination.keyCombination("Shortcut+W")] = Runnable { closeNote() }
-        scene.accelerators[KeyCombination.keyCombination("Shortcut+Shift+S")] = Runnable { saveAs() }
-        scene.accelerators[KeyCombination.keyCombination("F2")] = Runnable { renameCurrent() }
-        scene.accelerators[KeyCombination.keyCombination("Delete")] = Runnable { deleteCurrent() }
-        scene.accelerators[KeyCombination.keyCombination("Shortcut+,")] = Runnable { settingsDialog.show() }
-        scene.accelerators[KeyCombination.keyCombination("Shortcut+I")] = Runnable { importFolder() }
-        scene.accelerators[KeyCombination.keyCombination("Shortcut+E")] = Runnable { export() }
-        scene.accelerators[KeyCombination.keyCombination("Shortcut+Q")] = Runnable { Platform.exit() }
+        val shortcuts = LinkedHashMap<KeyCombination, Runnable>()
+        shortcuts[KeyCombination.keyCombination("Shortcut+S")] = Runnable { save() }
+        shortcuts[KeyCombination.keyCombination("Shortcut+N")] = Runnable { newNote() }
+        shortcuts[KeyCombination.keyCombination("Shortcut+P")] = Runnable { quickOpen.show() }
+        shortcuts[KeyCombination.keyCombination("Shortcut+Shift+F")] = Runnable { searchPanel.focusQuery() }
+        shortcuts[KeyCombination.keyCombination("Shortcut+B")] = Runnable { toggleFavorite() }
+        shortcuts[KeyCombination.keyCombination("Shortcut+Shift+D")] = Runnable { openDailyNote() }
+        shortcuts[KeyCombination.keyCombination("Shortcut+Shift+R")] = Runnable { rebuildIndex() }
+        shortcuts[KeyCombination.keyCombination("Shortcut+W")] = Runnable { closeNote() }
+        shortcuts[KeyCombination.keyCombination("Shortcut+Shift+S")] = Runnable { saveAs() }
+        shortcuts[KeyCombination.keyCombination("F2")] = Runnable { renameCurrent() }
+        shortcuts[KeyCombination.keyCombination("Delete")] = Runnable { deleteCurrent() }
+        shortcuts[KeyCombination.keyCombination("Shortcut+,")] = Runnable { settingsDialog.show() }
+        shortcuts[KeyCombination.keyCombination("Shortcut+I")] = Runnable { importFolder() }
+        shortcuts[KeyCombination.keyCombination("Shortcut+E")] = Runnable { export() }
+        shortcuts[KeyCombination.keyCombination("Shortcut+Q")] = Runnable { Platform.exit() }
+
+        // Capture-phase filter so the §8 shortcuts fire even when a focused
+        // TextArea/TextField consumes the key event (the cause of Ctrl+P no-oping).
+        scene.addEventFilter(KeyEvent.KEY_PRESSED) { evt ->
+            // Delete is tree-scoped: never intercept while editing text.
+            if (evt.code == KeyCode.DELETE && scene.focusOwner is TextInputControl) {
+                return@addEventFilter
+            }
+            for ((combo, action) in shortcuts) {
+                if (combo.match(evt)) {
+                    action.run()
+                    evt.consume()
+                    return@addEventFilter
+                }
+            }
+            // Escape: clear tag filter / clear search (contextual, non-dialog).
+            if (evt.code == KeyCode.ESCAPE) {
+                clearTagFilter()
+                searchPanel.clearQuery()
+                evt.consume()
+            }
+        }
     }
 
     fun showInitialState() {
@@ -230,15 +257,27 @@ class MainView(
 
     private fun openNote(relPath: String) {
         scope.launch {
-            val note = withContext(Dispatchers.IO) { runCatching { noteService.read(vaultRoot, relPath) }.getOrNull() }
-            if (note != null) {
-                openNote = note
-                Platform.runLater {
-                    editor.load(note.body)
-                    preview.update(note.body)
-                    statusBar.showDirty(false)
-                    backlinksPanel.showFor(note.path)
+            val note = withContext(Dispatchers.IO) { runCatching { noteService.read(vaultRoot, relPath) }.getOrNull() } ?: return@launch
+            val currentPath = openNote?.path
+            val currentTitle = openNote?.title
+            withContext(Dispatchers.JavaFx) {
+                if (editor.dirty) {
+                    if (currentPath == relPath) {
+                        // Same note already open with unsaved edits — don't discard.
+                        return@withContext
+                    }
+                    val ok = Alert(Alert.AlertType.CONFIRMATION).apply {
+                        title = "Discard changes"
+                        headerText = "Discard unsaved changes to \"${currentTitle ?: currentPath}\"?"
+                        contentText = "Your changes will be lost."
+                    }.showAndWait().orElse(null)
+                    if (ok != ButtonType.OK) return@withContext
                 }
+                openNote = note
+                editor.load(note.body)
+                preview.update(note.body)
+                statusBar.showDirty(false)
+                backlinksPanel.showFor(note.path)
             }
         }
     }
@@ -249,7 +288,7 @@ class MainView(
         val notes = noteService
         scope.launch {
             withContext(Dispatchers.IO) { notes.save(vaultRoot, current.copy(body = body)) }
-            Platform.runLater {
+            withContext(Dispatchers.JavaFx) {
                 editor.markSaved()
                 statusBar.showDirty(false)
                 tagsPanel.refresh()
@@ -260,7 +299,7 @@ class MainView(
     private fun newNote() {
         scope.launch {
             val note = withContext(Dispatchers.IO) { noteService.create(vaultRoot, currentFolder, "Untitled Note") }
-            Platform.runLater {
+            withContext(Dispatchers.JavaFx) {
                 openNote = note
                 editor.load(note.body)
                 preview.update(note.body)
@@ -295,7 +334,7 @@ class MainView(
         val name = dialog.showAndWait().orElse(null) ?: return
         scope.launch {
             val newPath = withContext(Dispatchers.IO) { noteService.rename(vaultRoot, current.path, name) }
-            Platform.runLater {
+            withContext(Dispatchers.JavaFx) {
                 refreshTree()
                 openNote(newPath)
             }
@@ -312,7 +351,7 @@ class MainView(
         val folder = dialog.showAndWait().orElse(null) ?: return
         scope.launch {
             val newPath = withContext(Dispatchers.IO) { noteService.move(vaultRoot, current.path, folder) }
-            Platform.runLater {
+            withContext(Dispatchers.JavaFx) {
                 refreshTree()
                 openNote(newPath)
             }
@@ -329,7 +368,7 @@ class MainView(
         if (confirmed != javafx.scene.control.ButtonType.OK) return
         scope.launch {
             withContext(Dispatchers.IO) { noteService.delete(vaultRoot, current.path) }
-            Platform.runLater {
+            withContext(Dispatchers.JavaFx) {
                 openNote = null
                 editor.load("")
                 preview.update("")
@@ -343,11 +382,12 @@ class MainView(
         val current = openNote ?: return
         scope.launch {
             withContext(Dispatchers.IO) { favoriteService.toggle(current.path) }
-            Platform.runLater { favoritesPanel.refresh() }
+            withContext(Dispatchers.JavaFx) { favoritesPanel.refresh() }
         }
     }
 
     private fun filterByTag(tagName: String) {
+        tagFilterActive = tagName.isNotEmpty()
         if (tagName.isEmpty()) {
             refreshTree()
             return
@@ -363,14 +403,21 @@ class MainView(
                     FolderNode(name = "Tag: $tagName", path = "", folders = emptyList(), notePaths = paths)
                 }
             }
-            Platform.runLater { vaultTree.refresh(tree) }
+            withContext(Dispatchers.JavaFx) { vaultTree.refresh(tree) }
+        }
+    }
+
+    private fun clearTagFilter() {
+        if (tagFilterActive) {
+            tagFilterActive = false
+            refreshTree()
         }
     }
 
     private fun openDailyNote() {
         scope.launch {
             val note = withContext(Dispatchers.IO) { dailyNoteService.openOrCreate(vaultRoot, LocalDate.now()) }
-            Platform.runLater {
+            withContext(Dispatchers.JavaFx) {
                 openNote = note
                 editor.load(note.body)
                 preview.update(note.body)
@@ -390,7 +437,7 @@ class MainView(
                     Platform.runLater { statusBar.showIndexing(done, total) }
                 }
             }
-            Platform.runLater {
+            withContext(Dispatchers.JavaFx) {
                 statusBar.showIdle(count)
                 refreshTree()
                 Alert(Alert.AlertType.INFORMATION).apply {
@@ -408,7 +455,7 @@ class MainView(
         if (dir == null) return
         scope.launch {
             val count = withContext(Dispatchers.IO) { importExportService.exportToFolder(vaultRoot, dir.toPath()) }
-            Platform.runLater {
+            withContext(Dispatchers.JavaFx) {
                 statusBar.showIdle(count)
                 Alert(Alert.AlertType.INFORMATION).apply {
                     title = "Export"
@@ -451,7 +498,7 @@ class MainView(
                 noteService.save(vaultRoot, base.copy(body = body))
                 base
             }
-            Platform.runLater {
+            withContext(Dispatchers.JavaFx) {
                 openNote = created.copy(body = body)
                 editor.load(body)
                 preview.update(body)
@@ -468,7 +515,7 @@ class MainView(
                     Platform.runLater { statusBar.showIndexing(done, total) }
                 }
             }
-            Platform.runLater {
+            withContext(Dispatchers.JavaFx) {
                 statusBar.showIdle(0)
                 refreshTree()
                 favoritesPanel.refresh()

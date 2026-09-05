@@ -75,4 +75,17 @@ class Fts5SearchIndexTest {
         fts.rebuild()
         assertTrue(fts.search("rebuilt").isNotEmpty())
     }
+
+    @Test
+    fun `bm25 ranks the more relevant note first`() {
+        // a.md matches in the title column AND has many body occurrences, so it is
+        // strictly more relevant than b.md (single body occurrence, no title match).
+        notes.upsert(note(path = "a.md", title = "Kotlin", body = "kotlin kotlin kotlin"))
+        notes.upsert(note(path = "b.md", title = "Random", body = "kotlin"))
+
+        val hits = fts.search("kotlin")
+        assertEquals(2, hits.size)
+        assertEquals("a.md", hits[0].path, "more relevant note must rank first: ${hits.map { it.path }}")
+        assertTrue(hits[0].rank < hits[1].rank, "bm25 score should be lower=better")
+    }
 }

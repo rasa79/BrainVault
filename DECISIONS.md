@@ -83,3 +83,21 @@ each get reads through to the store and each set writes through immediately. Thi
 "every property setter writes through to the store" contract and provides the §5.6 delegated-properties
 LEARN example. The §5.2 public API is unchanged.
 
+
+**2026-09-05 — Post-back calls use `Dispatchers.JavaFx` per §5.4; `Platform.runLater` remains only for synchronous callbacks.**
+All coroutine post-backs (tree refresh, tag/favorite/backlink/search list updates, editor load, preview
+render, status bar, quick-open populate) now hop back on `Dispatchers.JavaFx` (kotlinx-coroutines-javafx)
+rather than `Platform.runLater`. The only remaining `Platform.runLater` sites are the synchronous
+`IndexingService.fullRebuild` progress callbacks, which are invoked from a non-suspend lambda and therefore
+cannot use `withContext`; those are functionally equivalent (both run on the FX Application Thread).
+
+**2026-09-05 — `SqliteNoteRepository.toNote()` returns notes with empty tags/extras and `meta.title = null`.**
+The `notes` table does not store normalized tags or unknown front-matter extras, and it stores only the
+effective title (not the separate front-matter title). Therefore callers must not rely on a
+repository-returned `Note.meta` beyond `created`/`modified`; tags/extras/title are available from the
+on-disk file via `NoteService.read` / `FrontMatterCodec`.
+
+**2026-09-05 — `gradlew.bat`/`gradlew.bat test` over the `\\wsl$` UNC path fails in cmd.exe.**
+cmd.exe cannot hold a UNC path as its working directory, so any `.bat` Gradle invocation must be run from a
+mapped drive or via `pushd`. README §10.3's Windows column documents the workaround (`net use B: \\wsl$\...`
+then `B:\`), or `cmd /c pushd \\wsl$\... && gradlew.bat test`.

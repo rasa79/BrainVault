@@ -2,7 +2,6 @@ package com.brainvault.ui
 
 import com.brainvault.application.TagService
 import com.brainvault.domain.model.Tag
-import javafx.application.Platform
 import javafx.scene.control.Label
 import javafx.scene.control.ListCell
 import javafx.scene.control.ListView
@@ -11,6 +10,7 @@ import javafx.scene.layout.VBox
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.javafx.JavaFx
 import kotlinx.coroutines.withContext
 
 /**
@@ -42,7 +42,7 @@ class TagsPanel(
     fun refresh() {
         scope.launch {
             val tags = withContext(Dispatchers.IO) { tagService.allTags() }
-            Platform.runLater { list.items.setAll(tags) }
+            withContext(Dispatchers.JavaFx) { list.items.setAll(tags) }
         }
     }
 
