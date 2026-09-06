@@ -114,3 +114,36 @@ and guarantees forward-slash vault-relative paths on every OS per §5.3). Audite
 `substringAfterLast('/')`-style calls operate on **vault-relative forward-slash domain path strings** (not
 `java.nio.file.Path` relativization) and are safe; the only filesystem relativization in main code goes
 through `relativize`/`VaultFileStore.toRel`.
+
+**2026-09-05 — Fixed empty backlinks: the save path never indexed the saved note.**
+`MainView.save()` wrote the note file but did not call `IndexingService.indexOne`, so the note's extracted
+links were written to the `links` table only via an async watcher event (`onFileEvents`). That path is
+debounced and races with opening the target note: after Ctrl+S the model then clicks the target note,
+`BacklinksPanel.showFor(target)` queries backlinks before the source's link is persisted, so it is empty.
+(Trace: save → watcher (300 ms debounce, on the DB scope) → `onFileEvents` → `indexOne` — a race, and a
+silent-failure path because the DB scope was a `SupervisorJob` with no exception handler.) Candidate (c)
+was NOT the cause: `BacklinksPanel.showFor(note.path)` is invoked in `openNote`. Fix: after a successful
+save, call `indexingService.indexOne(vaultRoot, note.path)` on the serialized DB scope so links/backlinks
+are correct immediately.
+
+**2026-09-05 — Fixed dead index rebuild: `fullRebuild` ran off the serialized DB scope.**
+`MainView.rebuildIndex()` (Ctrl+Shift+R and Tools → Rebuild) and `importFolder()`'s rebuild called
+`indexingService.fullRebuild` on the UI scope's `Dispatchers.IO` (unconstrained) rather than the single-
+concurrency DB dispatcher used by the watcher. `fullRebuild` performs many DB writes on the one shared JDBC
+`Connection`; running concurrently with the watcher's `onFileEvents` hits `SQLITE_BUSY`/errors, which were
+swallowed silently by a `SupervisorJob` with no handler → "nothing happens". Fix: run `fullRebuild` on the
+serialized `dbDispatcher` (shared with the watcher), with progress callbacks to `StatusBar` and tree/panel
+refresh on completion.
+
+**2026-09-05 — Fixed export exposing only the folder path.**
+`MainView.export()` offered only `exportToFolder` via a `DirectoryChooser`; `ImportExportService.exportToZip`
+existed and was tested but was never wired into the UI. Fix: export now presents a "Export to folder…" /
+"Export to .zip…" choice; zip uses a `FileChooser` (`.zip` filter) and `exportToZip` (which emits
+vault-relative forward-slash entries, `.brainvault` excluded, per §9.3). The backlinks panel was also moved
+into a resizable horizontal `SplitPane` with a usable default width (it was a fixed-width `BorderPane` right
+node that could not be resized).
+
+**2026-09-05 — Added `CoroutineExceptionHandler`s to both UI and DB coroutine scopes.**
+Both `MainApp.dbScope` and `MainView.scope` are `SupervisorJob` scopes; without an exception handler a
+throwing child coroutine was swallowed silently. Each now carries a handler that logs to stderr, so this
+class of failure is never invisible again.

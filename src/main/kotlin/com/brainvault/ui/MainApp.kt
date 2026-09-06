@@ -25,6 +25,7 @@ import javafx.application.Application
 import javafx.application.Platform
 import javafx.scene.Scene
 import javafx.stage.Stage
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -64,7 +65,16 @@ class MainApp : Application() {
     //     Java would use Platform.runLater(...) or a Task.
     // ============================================================
     // All database/index writes are serialized through this single-concurrency scope.
-    private val dbScope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
+    // The exception handler makes a throwing child coroutine visible (log to stderr)
+    // instead of being silently swallowed by the SupervisorJob.
+    private val dbDispatcher = Dispatchers.IO.limitedParallelism(1)
+    private val dbScope = CoroutineScope(
+        SupervisorJob() + dbDispatcher +
+            CoroutineExceptionHandler { _, t ->
+                System.err.println("BrainVault DB coroutine failed: $t")
+                t.printStackTrace()
+            },
+    )
 
     override fun start(stage: Stage) {
         // 1. Application settings (§5.4 step 1).
@@ -122,6 +132,7 @@ class MainApp : Application() {
             backlinksFor = backlinksFor,
             dailyNoteService = dailyNoteService,
             importExportService = importExportService,
+            dbDispatcher = dbDispatcher,
         )
 
         val scene = Scene(mainView.root, 1000.0, 700.0)

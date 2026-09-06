@@ -17,6 +17,7 @@ import javafx.application.Platform
 import javafx.scene.control.Accordion
 import javafx.scene.control.Alert
 import javafx.scene.control.ButtonType
+import javafx.scene.control.ChoiceDialog
 import javafx.scene.control.Menu
 import javafx.scene.control.MenuBar
 import javafx.scene.control.MenuItem
@@ -33,6 +34,8 @@ import javafx.scene.layout.Priority
 import javafx.scene.layout.VBox
 import javafx.stage.DirectoryChooser
 import javafx.stage.FileChooser
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -61,6 +64,12 @@ private val SHORTCUT_HELP: List<Pair<String, String>> = listOf(
     "Ctrl+Q" to "Exit",
 )
 
+/** Makes a throwing coroutine visible (log to stderr) instead of being silently swallowed. */
+private val EXCEPTION_HANDLER = CoroutineExceptionHandler { _, t ->
+    System.err.println("BrainVault UI coroutine failed: $t")
+    t.printStackTrace()
+}
+
 /**
  * The application shell. Layout: left accordion (vault tree, favorites, tags),
  * center [SplitPane] (editor | preview) below a search panel, right backlinks
@@ -79,10 +88,11 @@ class MainView(
     private val backlinksFor: (String) -> List<Link>,
     private val dailyNoteService: DailyNoteService,
     private val importExportService: ImportExportService,
+    private val dbDispatcher: CoroutineDispatcher,
 ) {
     val root: BorderPane = BorderPane()
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + EXCEPTION_HANDLER)
     private val vaultTree = VaultTreeView(vaultService, noteService, vaultRoot, scope)
     private val editor = EditorView()
     private val preview = PreviewView(noteService)
@@ -120,10 +130,17 @@ class MainView(
         val center = VBox(searchPanel.view, split)
         VBox.setVgrow(split, Priority.ALWAYS)
 
+        // Center (search + editor/preview) and the backlinks panel share a resizable
+        // horizontal SplitPane, so the backlinks panel has a usable default width and
+        // can be dragged to resize.
+        val centerAndBacklinks = SplitPane(center, backlinksPanel.view).apply {
+            setDividerPositions(0.78)
+        }
+        SplitPane.setResizableWithParent(backlinksPanel.view, true)
+
         root.top = menuBar()
         root.left = left
-        root.center = center
-        root.right = backlinksPanel.view
+        root.center = centerAndBacklinks
         root.bottom = statusBar.view
     }
 
@@ -288,6 +305,11 @@ class MainView(
         val notes = noteService
         scope.launch {
             withContext(Dispatchers.IO) { notes.save(vaultRoot, current.copy(body = body)) }
+            // Index the saved note immediately (on the serialized DB scope) so its
+            // extracted links/backlinks reflect the just-written content right away —
+            // not merely after an async watcher event that may race with the next
+            // open. Otherwise backlinks stay empty.
+            withContext(dbDispatcher) { indexingService.indexOne(vaultRoot, current.path) }
             withContext(Dispatchers.JavaFx) {
                 editor.markSaved()
                 statusBar.showDirty(false)
@@ -432,13 +454,14 @@ class MainView(
         if (dir == null) return
         scope.launch {
             val count = withContext(Dispatchers.IO) { importExportService.importFolder(vaultRoot, dir.toPath(), "") }
-            withContext(Dispatchers.IO) {
+            val totalNotes = withContext(dbDispatcher) {
                 indexingService.fullRebuild(vaultRoot) { done, total ->
                     Platform.runLater { statusBar.showIndexing(done, total) }
                 }
+                noteRepository.count()
             }
             withContext(Dispatchers.JavaFx) {
-                statusBar.showIdle(count)
+                statusBar.showIdle(totalNotes)
                 refreshTree()
                 Alert(Alert.AlertType.INFORMATION).apply {
                     title = "Import"
@@ -451,17 +474,47 @@ class MainView(
     }
 
     private fun export() {
-        val dir = DirectoryChooser().apply { title = "Export vault to folder" }.showDialog(root.scene?.window)
-        if (dir == null) return
-        scope.launch {
-            val count = withContext(Dispatchers.IO) { importExportService.exportToFolder(vaultRoot, dir.toPath()) }
-            withContext(Dispatchers.JavaFx) {
-                statusBar.showIdle(count)
-                Alert(Alert.AlertType.INFORMATION).apply {
-                    title = "Export"
-                    headerText = "Exported $count note(s)"
-                    contentText = "Folder: $dir"
-                    showAndWait()
+        val folderLabel = "Export to folder…"
+        val zipLabel = "Export to .zip…"
+        val choice = ChoiceDialog(folderLabel, folderLabel, zipLabel).apply {
+            title = "Export"
+            headerText = "How would you like to export the vault?"
+        }
+        val selected = choice.showAndWait().orElse(null) ?: return
+        if (selected == zipLabel) {
+            val file = FileChooser().apply {
+                title = "Export vault to .zip"
+                extensionFilters.add(FileChooser.ExtensionFilter("Zip archive", "*.zip"))
+                initialFileName = "BrainVault.zip"
+            }.showSaveDialog(root.scene?.window)
+            if (file != null) {
+                scope.launch {
+                    withContext(Dispatchers.IO) { importExportService.exportToZip(vaultRoot, file.toPath()) }
+                    withContext(Dispatchers.JavaFx) {
+                        statusBar.showIdle(0)
+                        Alert(Alert.AlertType.INFORMATION).apply {
+                            title = "Export"
+                            headerText = "Exported vault to zip"
+                            contentText = file.toString()
+                            showAndWait()
+                        }
+                    }
+                }
+            }
+        } else {
+            val dir = DirectoryChooser().apply { title = "Export vault to folder" }.showDialog(root.scene?.window)
+            if (dir != null) {
+                scope.launch {
+                    val count = withContext(Dispatchers.IO) { importExportService.exportToFolder(vaultRoot, dir.toPath()) }
+                    withContext(Dispatchers.JavaFx) {
+                        statusBar.showIdle(count)
+                        Alert(Alert.AlertType.INFORMATION).apply {
+                            title = "Export"
+                            headerText = "Exported $count note(s)"
+                            contentText = "Folder: $dir"
+                            showAndWait()
+                        }
+                    }
                 }
             }
         }
@@ -498,6 +551,8 @@ class MainView(
                 noteService.save(vaultRoot, base.copy(body = body))
                 base
             }
+            // The saved copy may carry links; index it so backlinks are correct.
+            withContext(dbDispatcher) { indexingService.indexOne(vaultRoot, created.path) }
             withContext(Dispatchers.JavaFx) {
                 openNote = created.copy(body = body)
                 editor.load(body)
@@ -510,13 +565,16 @@ class MainView(
 
     private fun rebuildIndex() {
         scope.launch {
-            withContext(Dispatchers.IO) {
+            // Rebuild on the serialized DB scope (single-concurrency), with progress
+            // callbacks to the status bar; on completion refresh the tree/panels.
+            val count = withContext(dbDispatcher) {
                 indexingService.fullRebuild(vaultRoot) { done, total ->
                     Platform.runLater { statusBar.showIndexing(done, total) }
                 }
+                noteRepository.count()
             }
             withContext(Dispatchers.JavaFx) {
-                statusBar.showIdle(0)
+                statusBar.showIdle(count)
                 refreshTree()
                 favoritesPanel.refresh()
                 tagsPanel.refresh()
