@@ -18,7 +18,11 @@ class VaultService(private val fileStore: VaultFileStore) {
         return buildNode(root, rel = "", vaultRoot = root)
     }
 
-    /** All `*.md` files as absolute paths, ordered by vault-relative path. */
+    /**
+     * All `*.md` files as absolute paths, ordered by vault-relative path. Use
+     * [VaultFileStore.toRel] (relativize) to get a forward-slash vault-relative
+     * string — do not hand-roll path prefix-stripping.
+     */
     fun markdownFiles(vaultRoot: Path): List<Path> {
         val root = vaultRoot.toAbsolutePath().normalize()
         return fileStore.listMarkdown(root).map { root.resolve(it) }

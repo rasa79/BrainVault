@@ -98,6 +98,19 @@ repository-returned `Note.meta` beyond `created`/`modified`; tags/extras/title a
 on-disk file via `NoteService.read` / `FrontMatterCodec`.
 
 **2026-09-05 — `gradlew.bat`/`gradlew.bat test` over the `\\wsl$` UNC path fails in cmd.exe.**
-cmd.exe cannot hold a UNC path as its working directory, so any `.bat` Gradle invocation must be run from a
-mapped drive or via `pushd`. README §10.3's Windows column documents the workaround (`net use B: \\wsl$\...`
-then `B:\`), or `cmd /c pushd \\wsl$\... && gradlew.bat test`.
+cmd.exe cannot hold a UNC path as its working directory, and the `net use`/`pushd` drive-mapping workaround
+also fails in practice (`net use` → system error 64; the wrapper crashes even from a mapped drive). The
+verified workflow is to **robocopy-mirror the repo to a native Windows path** and run `gradlew.bat` there:
+`robocopy \\wsl$\Ubuntu\home\<user>\dev2\BrainVault C:\Users\<user>\dev\BrainVault /MIR /XD .gradle build
+.gradle-home .bootstrap-gradle .bootstrap-tmp .kotlin .idea`, then `gradlew.bat test` in
+`C:\Users\<user>\dev\BrainVault`. WSL stays the master; re-mirror the same `robocopy` after each change.
+README §10.3's Windows column documents this.
+
+**2026-09-05 — Fixed a Windows-only `VaultServiceTest` failure caused by hand-rolled path prefix-stripping.**
+The test helper `Path.relTo(base)` converted an absolute path to a vault-relative string via
+`toString().removePrefix(base.toString() + "/")`, which never matches on Windows (`\` separator) and left
+absolute paths. Replaced with `VaultFileStore.toRel` (which uses `root.relativize(...)` + `replace('\\','/')`
+and guarantees forward-slash vault-relative paths on every OS per §5.3). Audited the codebase: all other
+`substringAfterLast('/')`-style calls operate on **vault-relative forward-slash domain path strings** (not
+`java.nio.file.Path` relativization) and are safe; the only filesystem relativization in main code goes
+through `relativize`/`VaultFileStore.toRel`.

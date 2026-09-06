@@ -4,11 +4,11 @@ import com.brainvault.infrastructure.fs.VaultFileStore
 import com.brainvault.testutil.TestVaults
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
-import java.nio.file.Path
 
 class VaultServiceTest {
 
-    private val service = VaultService(VaultFileStore())
+    private val fileStore = VaultFileStore()
+    private val service = VaultService(fileStore)
 
     @Test
     fun `tree builds nested folders and notes`() {
@@ -44,9 +44,10 @@ class VaultServiceTest {
         TestVaults.write(root, "sub/c.md", "# C")
         TestVaults.write(root, ".brainvault/secret.md", "# x")
 
-        val rels = service.markdownFiles(root).map { it.relTo(root) }
+        // Convert the returned absolute Paths to vault-relative forward-slash
+        // strings via toRel (relativize) — this is OS-independent, unlike
+        // hand-rolled prefix-stripping with a hardcoded '/'.
+        val rels = service.markdownFiles(root).map { fileStore.toRel(root, it) }
         assertEquals(listOf("a.md", "b.md", "sub/c.md"), rels)
     }
-
-    private fun Path.relTo(base: Path): String = toString().removePrefix(base.toAbsolutePath().toString() + "/")
 }

@@ -29,11 +29,11 @@ javac --version
 | Task | WSL (dev/test) | Windows (production) |
 | --- | --- | --- |
 | Create project root | `mkdir -p ~/dev2/BrainVault` | n/a (repo is shared) |
-| Repo location | `~/dev2/BrainVault` | `\\wsl$\Ubuntu\home\<user>\dev2\BrainVault` — **PowerShell only**, never cmd.exe. If you must use cmd.exe, map a drive first: `net use B: \\wsl$\Ubuntu\home\<user>\dev2\BrainVault` then run Gradle from `B:\`; or run `cmd /c pushd \\wsl$\Ubuntu\home\<user>\dev2\BrainVault && gradlew.bat test` (cmd.exe cannot hold a UNC path as its working directory). |
+| Repo location | `~/dev2/BrainVault` | **Do not run Gradle from the UNC path** (`\\wsl$\Ubuntu\home\<user>\dev2\BrainVault`) — cmd.exe cannot hold a UNC working directory, and `net use`/`pushd` drive-mapping fails in practice (system error 64; the wrapper crashes even from a mapped drive). Instead **mirror the repo to a native Windows path** and run Gradle there:<br>`robocopy \\wsl$\Ubuntu\home\<user>\dev2\BrainVault C:\Users\<user>\dev\BrainVault /MIR /XD .gradle build .gradle-home .bootstrap-gradle .bootstrap-tmp .kotlin .idea`<br>WSL stays the master; **re-mirror** (re-run the same `robocopy`) after each change. |
 | Bootstrap wrapper (once) | `gradle wrapper --gradle-version 9.6.1` | n/a — wrapper committed |
-| Build + test | `./gradlew test` | `gradlew.bat test` |
-| Run app | `./gradlew run` | `gradlew.bat run` |
-| Clean | `./gradlew clean` | `gradlew.bat clean` |
+| Build + test | `./gradlew test` | `gradlew.bat test` (in the native mirror above) |
+| Run app | `./gradlew run` | `gradlew.bat run` (in the native mirror above) |
+| Clean | `./gradlew clean` | `gradlew.bat clean` (in the native mirror above) |
 
 ## Vault paths — do not mix
 
